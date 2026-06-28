@@ -1,46 +1,31 @@
 import yfinance as yf
-import numpy as np
 
-def get_data(ticker):
-    try:
-        df = yf.download(
-            ticker,
-            period="5d",
-            interval="5m",
-            progress=False,
-            threads=False
-        )
+def get_price_and_chain(ticker):
+    t = yf.Ticker(ticker)
 
-        # If data exists → use it
-        if df is not None and not df.empty:
-            close = df["Close"].dropna().astype(float)
+    # -------------------------
+    # REAL-TIME UNDERLYING PRICE
+    # -------------------------
+    hist = t.history(period="1d", interval="1m")
 
-            if len(close) > 0:
-                price = float(close.iloc[-1])
-                series = close.tolist()
-                return price, series
+    if hist is None or hist.empty:
+        raise ValueError("No price data")
 
-        # If empty → force fallback
-        raise Exception("Empty or invalid data")
+    price = float(hist["Close"].iloc[-1])
 
-    except Exception as e:
-        print(f"[FALLBACK USED] {ticker} → {e}")
+    # -------------------------
+    # OPTION CHAIN (nearest expiry)
+    # -------------------------
+    expirations = t.options
 
-        # -------------------------
-        # SAFE SYNTHETIC DATA (NEVER FAILS)
-        # -------------------------
-        base_prices = {
-            "SPY": 450,
-            "QQQ": 710,
-            "AAPL": 190,
-            "TSLA": 250,
-            "NVDA": 600,
-            "META": 350
-        }
+    if not expirations:
+        raise ValueError("No options available")
 
-        base = base_prices.get(ticker, 100)
+    nearest_expiry = expirations[0]
 
-        series = list(base + np.random.randn(80).cumsum())
-        price = series[-1]
+    chain = t.option_chain(nearest_expiry)
 
-        return price, series
+    calls = chain.calls
+    puts = chain.puts
+
+    return price, calls, puts, nearest_expiry
