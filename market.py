@@ -1,42 +1,21 @@
 import yfinance as yf
-import numpy as np
 
 def get_data(ticker):
-    try:
-        df = yf.download(
-            ticker,
-            period="1mo",
-            interval="15m",
-            progress=False,
-            threads=False
-        )
+    df = yf.download(
+        ticker,
+        period="1d",
+        interval="1m",
+        progress=False,
+        threads=False
+    )
 
-        if df is None or df.empty:
-            raise Exception("Yahoo returned empty data")
+    if df is None or df.empty:
+        raise ValueError(f"No data for {ticker}")
 
-        series = df["Close"].dropna().astype(float).tolist()
-        price = series[-1]
+    # 🔥 REAL-TIME LAST PRICE (THIS FIXES YOUR 380 PROBLEM)
+    price = float(df["Close"].dropna().iloc[-1])
 
-        return price, series
+    # full intraday series
+    series = df["Close"].dropna().astype(float).tolist()
 
-    except Exception as e:
-        print(f"[FALLBACK ACTIVE] {ticker} → {e}")
-
-        # -------------------------
-        # SAFE FAKE DATA (ENSURES OUTPUT)
-        # -------------------------
-        base_prices = {
-            "SPY": 450,
-            "QQQ": 380,
-            "AAPL": 190,
-            "TSLA": 250,
-            "NVDA": 600,
-            "META": 350
-        }
-
-        base = base_prices.get(ticker, 100)
-
-        series = list(base + np.random.randn(60).cumsum())
-        price = series[-1]
-
-        return price, series
+    return price, series
