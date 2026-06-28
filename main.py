@@ -1,112 +1,108 @@
 import os
 import numpy as np
 import pandas as pd
-from market import get_data
+from market import get_price_and_chain
 
-print("BOT STARTED - STABLE DOUBLE DIAGONAL SCANNER")
+print("REAL OPTIONS DOUBLE DIAGONAL ENGINE STARTED")
 
 os.makedirs("output", exist_ok=True)
 
 # =========================
-# 🔥 EDIT YOUR STOCK LIST HERE
+# CHANGE YOUR WATCHLIST HERE
 # =========================
-tickers = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "META"]
+tickers = ["QQQ", "SPY", "AAPL", "TSLA"]
 
 results = []
-
-def round_strike(x):
-    return round(x / 5) * 5
-
 
 for ticker in tickers:
     print(f"\nProcessing {ticker}")
 
     try:
-        price, series = get_data(ticker)
+        price, calls, puts, expiry = get_price_and_chain(ticker)
 
-        print(f"{ticker} price: {price} | points: {len(series)}")
-
-        series = np.array(series, dtype=float)
-
-        # -------------------------
-        # VOLATILITY
-        # -------------------------
-        returns = np.diff(series) / series[:-1]
-        volatility = np.std(returns) * np.sqrt(252)
+        print(f"{ticker} PRICE: {price}")
+        print(f"EXPIRY USED: {expiry}")
 
         # -------------------------
-        # TREND
+        # FIND ATM STRIKES
         # -------------------------
-        trend = (series[-1] - series[0]) / series[0]
+        calls = calls.sort_values("strike")
+        puts = puts.sort_values("strike")
+
+        atm_call = calls.iloc[(calls["strike"] - price).abs().argmin()]
+        atm_put = puts.iloc[(puts["strike"] - price).abs().argmin()]
 
         # -------------------------
-        # EXPECTED MOVE
+        # OUTER WINGS (real market strikes)
         # -------------------------
-        expected_move = price * volatility * 0.1
+        otm_calls = calls[calls["strike"] > price]
+        otm_puts = puts[puts["strike"] < price]
 
-        upper = price + expected_move
-        lower = price - expected_move
+        if len(otm_calls) < 2 or len(otm_puts) < 2:
+            print("Not enough strikes")
+            continue
 
-        # -------------------------
-        # STRIKES (DOUBLE DIAGONAL)
-        # -------------------------
-        short_call = round_strike(upper)
-        short_put = round_strike(lower)
+        short_call = otm_calls.iloc[0]
+        long_call = otm_calls.iloc[2]
 
-        long_call = round_strike(upper + expected_move * 0.5)
-        long_put = round_strike(lower - expected_move * 0.5)
-
-        # -------------------------
-        # COST ESTIMATE
-        # -------------------------
-        estimated_debit = 2.5 * (1 + volatility * 5)
+        short_put = otm_puts.iloc[-1]
+        long_put = otm_puts.iloc[-3]
 
         # -------------------------
-        # SIGNAL LOGIC
+        # REAL PREMIUM COST
         # -------------------------
-        if abs(trend) < 0.015 and volatility > 0.12:
-            signal = "BEST_DOUBLE_DIAGONAL"
+        debit = (
+            long_call["lastPrice"]
+            + long_put["lastPrice"]
+            - short_call["lastPrice"]
+            - short_put["lastPrice"]
+        )
+
+        # -------------------------
+        # SIGNAL (simple volatility proxy)
+        # -------------------------
+        expected_move = price * 0.02
+
+        if abs(short_call["strike"] - price) > expected_move:
+            signal = "GOOD_SETUP"
             score = 5
-        elif abs(trend) < 0.025:
+        else:
             signal = "OK_SETUP"
             score = 3
-        else:
-            signal = "AVOID_TREND"
-            score = 0
 
         results.append({
             "Ticker": ticker,
-            "Price": float(price),
-            "Trend": float(trend),
-            "Volatility": float(volatility),
+            "Price": price,
+            "Expiry": expiry,
 
-            "Expected_Move": float(expected_move),
+            "Short_Call_Strike": short_call["strike"],
+            "Short_Put_Strike": short_put["strike"],
+            "Long_Call_Strike": long_call["strike"],
+            "Long_Put_Strike": long_put["strike"],
 
-            "Short_Put": short_put,
-            "Short_Call": short_call,
-            "Long_Put": long_put,
-            "Long_Call": long_call,
+            "Short_Call_Premium": short_call["lastPrice"],
+            "Short_Put_Premium": short_put["lastPrice"],
+            "Long_Call_Premium": long_call["lastPrice"],
+            "Long_Put_Premium": long_put["lastPrice"],
 
-            "Estimated_Debit": float(estimated_debit),
-
+            "Estimated_Debit": debit,
             "Signal": signal,
             "Score": score
         })
 
-        print(f"{ticker} → ADDED")
+        print(f"{ticker} DONE")
 
     except Exception as e:
-        print(f"{ticker} ERROR → {e}")
+        print(f"{ticker} ERROR: {e}")
 
-
-# =========================
-# SAVE (NEVER EMPTY)
-# =========================
+# -------------------------
+# SAVE OUTPUT
+# -------------------------
 df = pd.DataFrame(results)
 
-print("\nTOTAL ROWS GENERATED:", len(df))
+df = df.sort_values("Score", ascending=False)
 
 df.to_csv("output/results.csv", index=False)
 
-print("FILE SAVED → output/results.csv")
+print("\nDONE")
 print(df)
