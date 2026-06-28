@@ -24,11 +24,11 @@ jobs:
       - name: Run bot
         run: python main.py
 
-      - name: Show output
+      - name: Show files
         run: ls -R
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: double-diagonal-results
+          name: trading-results
           path: output/results.csv
