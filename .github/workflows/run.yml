@@ -27,9 +27,8 @@ jobs:
       - name: Show output
         run: ls -R
 
-      # ✅ THIS IS WHAT YOU WERE MISSING
-      - name: Upload results file
+      - name: Upload results
         uses: actions/upload-artifact@v4
         with:
-          name: trading-results
+          name: double-diagonal-results
           path: output/results.csv
