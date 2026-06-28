@@ -1,7 +1,15 @@
 import yfinance as yf
 
-def get_data(ticker, period="5d", interval="5m"):
-    df = yf.download(ticker, period=period, interval=interval, progress=False)
+def get_data(ticker):
+    # =========================
+    # 🔥 CHANGE DATA QUALITY HERE
+    # =========================
+    df = yf.download(
+        ticker,
+        period="1mo",
+        interval="15m",
+        progress=False
+    )
 
     if df is None or df.empty:
         raise ValueError(f"No data for {ticker}")
