@@ -8,14 +8,14 @@ print("BOT STARTED - MULTI ASSET SCANNER")
 os.makedirs("output", exist_ok=True)
 
 # -------------------------
-# WATCHLIST (EDIT THIS)
+# WATCHLIST
 # -------------------------
 tickers = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "META"]
 
 results = []
 
 # -------------------------
-# LOOP THROUGH ASSETS
+# SCAN ALL TICKERS
 # -------------------------
 for ticker in tickers:
     try:
@@ -23,10 +23,17 @@ for ticker in tickers:
 
         print(f"Processing {ticker} | Data points: {len(series)}")
 
+        # Safety check
+        if len(series) < 2:
+            print(f"Not enough data for {ticker}")
+            continue
+
+        series = np.array(series, dtype=float)
+
         # -------------------------
-        # VOLATILITY
+        # RETURNS + VOLATILITY
         # -------------------------
-        returns = np.diff(series) / np.array(series[:-1])
+        returns = np.diff(series) / series[:-1]
         volatility = np.std(returns) * np.sqrt(252)
 
         # -------------------------
@@ -35,7 +42,7 @@ for ticker in tickers:
         trend = (series[-1] - series[0]) / series[0]
 
         # -------------------------
-        # DOUBLE DIAGONAL SIGNAL
+        # DOUBLE DIAGONAL SIGNAL LOGIC
         # -------------------------
         if abs(trend) < 0.01 and volatility > 0.15:
             signal = "GOOD_DOUBLE_DIAGONAL"
@@ -56,33 +63,35 @@ for ticker in tickers:
 
         results.append({
             "Ticker": ticker,
-            "Price": price,
-            "Trend": trend,
-            "Volatility": volatility,
-            "Expected_Move": expected_move,
-            "Support": support,
-            "Resistance": resistance,
+            "Price": float(price),
+            "Trend": float(trend),
+            "Volatility": float(volatility),
+            "Expected_Move": float(expected_move),
+            "Support": float(support),
+            "Resistance": float(resistance),
             "Signal": signal,
-            "Score": score
+            "Score": int(score)
         })
 
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
 
 # -------------------------
-# CREATE DATAFRAME
+# CREATE DATAFRAME SAFELY
 # -------------------------
 df = pd.DataFrame(results)
 
 # -------------------------
-# SORT BEST SETUPS FIRST
+# SAVE EVEN IF EMPTY (NO CRASH)
 # -------------------------
-df = df.sort_values(by="Score", ascending=False)
+if df.empty:
+    print("NO VALID DATA FOUND - CHECK MARKET DATA")
+    df.to_csv("output/results.csv", index=False)
+else:
+    df = df.sort_values(by="Score", ascending=False)
+    df.to_csv("output/results.csv", index=False)
 
-# -------------------------
-# SAVE OUTPUT
-# -------------------------
-df.to_csv("output/results.csv", index=False)
+    print("\nTOP SETUPS:")
+    print(df.head())
 
-print("DONE - MULTI ASSET SCAN COMPLETE")
-print(df)
+print("DONE - BOT FINISHED")
