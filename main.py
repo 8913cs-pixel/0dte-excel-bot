@@ -1,108 +1,97 @@
-import os
-import numpy as np
 import pandas as pd
-from market import get_price_and_chain
+from market import get_price_and_chains
 
-print("REAL OPTIONS DOUBLE DIAGONAL ENGINE STARTED")
+TICKERS = ["QQQ", "SPY", "AAPL"]  # change anytime
 
-os.makedirs("output", exist_ok=True)
 
-# =========================
-# CHANGE YOUR WATCHLIST HERE
-# =========================
-tickers = ["QQQ", "SPY", "AAPL", "TSLA"]
+def build_double_diagonal(ticker):
 
-results = []
+    (
+        price,
+        front_calls,
+        front_puts,
+        front_expiry,
+        back_calls,
+        back_puts,
+        back_expiry,
+    ) = get_price_and_chains(ticker)
 
-for ticker in tickers:
-    print(f"\nProcessing {ticker}")
+    # ---------------------------
+    # SORT STRIKES
+    # ---------------------------
+    front_calls = front_calls.sort_values("strike")
+    front_puts = front_puts.sort_values("strike")
 
-    try:
-        price, calls, puts, expiry = get_price_and_chain(ticker)
+    back_calls = back_calls.sort_values("strike")
+    back_puts = back_puts.sort_values("strike")
 
-        print(f"{ticker} PRICE: {price}")
-        print(f"EXPIRY USED: {expiry}")
+    # ---------------------------
+    # FILTER OTM STRIKES
+    # ---------------------------
+    front_otm_calls = front_calls[front_calls["strike"] > price]
+    front_otm_puts = front_puts[front_puts["strike"] < price]
 
-        # -------------------------
-        # FIND ATM STRIKES
-        # -------------------------
-        calls = calls.sort_values("strike")
-        puts = puts.sort_values("strike")
+    back_otm_calls = back_calls[back_calls["strike"] > price]
+    back_otm_puts = back_puts[back_puts["strike"] < price]
 
-        atm_call = calls.iloc[(calls["strike"] - price).abs().argmin()]
-        atm_put = puts.iloc[(puts["strike"] - price).abs().argmin()]
+    if len(front_otm_calls) < 1 or len(front_otm_puts) < 1:
+        return None
 
-        # -------------------------
-        # OUTER WINGS (real market strikes)
-        # -------------------------
-        otm_calls = calls[calls["strike"] > price]
-        otm_puts = puts[puts["strike"] < price]
+    if len(back_otm_calls) < 3 or len(back_otm_puts) < 3:
+        return None
 
-        if len(otm_calls) < 2 or len(otm_puts) < 2:
-            print("Not enough strikes")
-            continue
+    # ---------------------------
+    # BUILD LEGS
+    # ---------------------------
+    short_call = front_otm_calls.iloc[0]
+    short_put = front_otm_puts.iloc[-1]
 
-        short_call = otm_calls.iloc[0]
-        long_call = otm_calls.iloc[2]
+    long_call = back_otm_calls.iloc[2]
+    long_put = back_otm_puts.iloc[-3]
 
-        short_put = otm_puts.iloc[-1]
-        long_put = otm_puts.iloc[-3]
+    # ---------------------------
+    # NET DEBIT
+    # ---------------------------
+    net_debit = (
+        long_call["lastPrice"]
+        + long_put["lastPrice"]
+        - short_call["lastPrice"]
+        - short_put["lastPrice"]
+    )
 
-        # -------------------------
-        # REAL PREMIUM COST
-        # -------------------------
-        debit = (
-            long_call["lastPrice"]
-            + long_put["lastPrice"]
-            - short_call["lastPrice"]
-            - short_put["lastPrice"]
-        )
+    return {
+        "Ticker": ticker,
+        "Price": price,
 
-        # -------------------------
-        # SIGNAL (simple volatility proxy)
-        # -------------------------
-        expected_move = price * 0.02
+        "Short_Call_Strike": short_call["strike"],
+        "Short_Put_Strike": short_put["strike"],
 
-        if abs(short_call["strike"] - price) > expected_move:
-            signal = "GOOD_SETUP"
-            score = 5
-        else:
-            signal = "OK_SETUP"
-            score = 3
+        "Long_Call_Strike": long_call["strike"],
+        "Long_Put_Strike": long_put["strike"],
 
-        results.append({
-            "Ticker": ticker,
-            "Price": price,
-            "Expiry": expiry,
+        "Short_Expiry": front_expiry,
+        "Long_Expiry": back_expiry,
 
-            "Short_Call_Strike": short_call["strike"],
-            "Short_Put_Strike": short_put["strike"],
-            "Long_Call_Strike": long_call["strike"],
-            "Long_Put_Strike": long_put["strike"],
+        "Net_Debit": net_debit,
+    }
 
-            "Short_Call_Premium": short_call["lastPrice"],
-            "Short_Put_Premium": short_put["lastPrice"],
-            "Long_Call_Premium": long_call["lastPrice"],
-            "Long_Put_Premium": long_put["lastPrice"],
 
-            "Estimated_Debit": debit,
-            "Signal": signal,
-            "Score": score
-        })
+def run():
+    results = []
 
-        print(f"{ticker} DONE")
+    for t in TICKERS:
+        try:
+            res = build_double_diagonal(t)
+            if res:
+                results.append(res)
+        except Exception as e:
+            print(f"{t} error:", e)
 
-    except Exception as e:
-        print(f"{ticker} ERROR: {e}")
+    df = pd.DataFrame(results)
 
-# -------------------------
-# SAVE OUTPUT
-# -------------------------
-df = pd.DataFrame(results)
+    df.to_csv("output/results.csv", index=False)
+    print(df)
 
-df = df.sort_values("Score", ascending=False)
 
-df.to_csv("output/results.csv", index=False)
-
-print("\nDONE")
-print(df)
+if __name__ == "__main__":
+    run()
