@@ -1,34 +1,21 @@
-import os
 import pandas as pd
 from market import get_price_and_chains
 
-TICKERS = ["QQQ", "SPY", "AAPL"]
+
+TICKER = "QQQ"
+OUTPUT_FILE = "output/results.csv"
 
 
-def build_double_diagonal(ticker):
+def build_double_diagonal(price,
+                          front_calls, front_puts, front_expiry,
+                          back_calls, back_puts, back_expiry):
 
-    (
-        price,
-        front_calls,
-        front_puts,
-        front_expiry,
-        back_calls,
-        back_puts,
-        back_expiry,
-    ) = get_price_and_chains(ticker)
-
-    # -------------------------
-    # SORT DATA
-    # -------------------------
     front_calls = front_calls.sort_values("strike")
     front_puts = front_puts.sort_values("strike")
-
     back_calls = back_calls.sort_values("strike")
     back_puts = back_puts.sort_values("strike")
 
-    # -------------------------
-    # FILTER OTM
-    # -------------------------
+    # OTM filtering
     front_otm_calls = front_calls[front_calls["strike"] > price]
     front_otm_puts = front_puts[front_puts["strike"] < price]
 
@@ -37,23 +24,18 @@ def build_double_diagonal(ticker):
 
     if len(front_otm_calls) < 1 or len(front_otm_puts) < 1:
         return None
-
     if len(back_otm_calls) < 3 or len(back_otm_puts) < 3:
         return None
 
-    # -------------------------
-    # BUILD LEG ENTRIES
-    # -------------------------
+    # Front expiry = shorts
     short_call = front_otm_calls.iloc[0]
     short_put = front_otm_puts.iloc[-1]
 
+    # Back expiry = longs
     long_call = back_otm_calls.iloc[2]
     long_put = back_otm_puts.iloc[-3]
 
-    # -------------------------
-    # NET DEBIT
-    # -------------------------
-    net_debit = (
+    debit = (
         long_call["lastPrice"]
         + long_put["lastPrice"]
         - short_call["lastPrice"]
@@ -61,41 +43,46 @@ def build_double_diagonal(ticker):
     )
 
     return {
-        "Ticker": ticker,
-        "Price": price,
+        "Ticker": TICKER,
+        "Underlying": price,
 
         "Short_Call_Strike": short_call["strike"],
         "Short_Put_Strike": short_put["strike"],
-
         "Long_Call_Strike": long_call["strike"],
         "Long_Put_Strike": long_put["strike"],
 
         "Short_Expiry": front_expiry,
         "Long_Expiry": back_expiry,
 
-        "Net_Debit": net_debit,
+        "Net_Debit": round(debit, 2),
     }
 
 
 def run():
+    (
+        price,
+        front_calls,
+        front_puts,
+        front_expiry,
+        back_calls,
+        back_puts,
+        back_expiry,
+    ) = get_price_and_chains(TICKER)
 
-    # ✅ FIX: create folder (THIS fixes your error)
-    os.makedirs("output", exist_ok=True)
+    trade = build_double_diagonal(
+        price,
+        front_calls, front_puts, front_expiry,
+        back_calls, back_puts, back_expiry,
+    )
 
-    results = []
+    if trade is None:
+        print("No valid setup found")
+        return
 
-    for ticker in TICKERS:
-        try:
-            res = build_double_diagonal(ticker)
-            if res:
-                results.append(res)
-        except Exception as e:
-            print(f"{ticker} error:", e)
+    df = pd.DataFrame([trade])
+    df.to_csv(OUTPUT_FILE, index=False)
 
-    df = pd.DataFrame(results)
-
-    df.to_csv("output/results.csv", index=False)
-    print(df)
+    print("Saved:", OUTPUT_FILE)
 
 
 if __name__ == "__main__":
