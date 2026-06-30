@@ -23,4 +23,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: options-results
-          path: output/
+          path: output/results.csv
